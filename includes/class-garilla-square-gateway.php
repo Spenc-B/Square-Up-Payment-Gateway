@@ -177,8 +177,54 @@ class Garilla_Square_Gateway extends WC_Payment_Gateway {
         if ( empty( $access_token ) || empty( $location_id ) ) {
             return new WP_Error( 'missing_config', 'Square credentials not configured.' );
         }
+        // Prefer using the Square PHP SDK if available (example code integration)
+        if ( class_exists( '\Square\SquareClient' ) ) {
+            try {
+                $client = new \Square\SquareClient([
+                    'accessToken' => $access_token,
+                    'environment' => $env === 'production' ? 'production' : 'sandbox',
+                ]);
 
-        $endpoint = ($env === 'production') ? 'https://connect.squareup.com/v2/payments' : 'https://connect.squareupsandbox.com/v2/payments';
+                $paymentsApi = $client->getPaymentsApi();
+
+                // Build money object
+                $money = new \Square\Models\Money();
+                $money->setAmount( (int) $amount );
+                $money->setCurrency( $currency );
+
+                $idempotency_key = uniqid( 'garilla_' );
+
+                $createPaymentRequest = new \Square\Models\CreatePaymentRequest( $nonce, $idempotency_key );
+                $createPaymentRequest->setAmountMoney( $money );
+                $createPaymentRequest->setLocationId( $location_id );
+                $createPaymentRequest->setNote( 'Order ' . $order->get_order_number() );
+
+                $resp = $paymentsApi->createPayment( $createPaymentRequest );
+
+                if ( $resp->isSuccess() ) {
+                    $result = $resp->getResult();
+                    if ( $result && $result->getPayment() && $result->getPayment()->getId() ) {
+                        return $result->getPayment()->getId();
+                    }
+                    return new WP_Error( 'square_error', 'Payment created but no ID returned.' );
+                } else {
+                    $errors = $resp->getErrors();
+                    $msg = 'Square API error';
+                    if ( is_array( $errors ) && ! empty( $errors[0]->getDetail() ) ) {
+                        $msg = $errors[0]->getDetail();
+                    } elseif ( is_array( $errors ) && ! empty( $errors[0]->getMessage() ) ) {
+                        $msg = $errors[0]->getMessage();
+                    }
+                    return new WP_Error( 'square_error', $msg );
+                }
+
+            } catch ( Exception $e ) {
+                return new WP_Error( 'square_sdk_exception', $e->getMessage() );
+            }
+        }
+
+        // Fallback: use direct HTTP request if SDK not available
+        $endpoint = ( $env === 'production' ) ? 'https://connect.squareup.com/v2/payments' : 'https://connect.squareupsandbox.com/v2/payments';
 
         $idempotency_key = uniqid( 'garilla_' );
 
