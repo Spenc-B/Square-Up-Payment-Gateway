@@ -1,0 +1,10 @@
+#garilla-square-payment #card-container {
+    margin-bottom: 1rem;
+}
+#payment-request-button {
+    margin-bottom: 1rem;
+}
+
+.garilla-square-error {
+    color: #b94a48;
+}
